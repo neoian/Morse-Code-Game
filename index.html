@@ -224,7 +224,7 @@
         .correct { color: #4ade80; }
         .wrong   { color: #f87171; }
 
-        .quiz-actions { margin-top: 18px; display: flex; gap: 8px; justify-content: center; }
+        .quiz-actions { margin-top: 18px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
         .help-box {
             margin-top: 14px;
@@ -324,7 +324,7 @@
 
             <div class="quiz-actions">
                 <button class="btn btn-primary"   onclick="nextQ()">다음 →</button>
-                <button class="btn btn-secondary"  onclick="replayQ()">다시 듣기</button>
+                <button class="btn btn-secondary"  onclick="replayQ()">▶ 다시 듣기</button>
                 <button class="btn btn-secondary"  onclick="resetScore()">초기화</button>
             </div>
         </div>
@@ -365,21 +365,22 @@ const ALL   = [...ALPHA, ...NUMS];
 
 /* ── Audio ── */
 let actx = null;
-function ctx() {
+function getCtx() {
     if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
     return actx;
 }
 
 function scheduleMorse(code, startTime) {
     const DOT = 0.07, DASH = 0.21, GAP = 0.07, LGAP = 0.21, WGAP = 0.49;
+    const c = getCtx();
     let t = startTime;
     for (const tok of code.split(' ')) {
         if (tok === '/') { t += WGAP; continue; }
         for (const ch of tok) {
             const dur = ch === '.' ? DOT : DASH;
-            const osc = ctx().createOscillator();
-            const g   = ctx().createGain();
-            osc.connect(g); g.connect(ctx().destination);
+            const osc = c.createOscillator();
+            const g   = c.createGain();
+            osc.connect(g); g.connect(c.destination);
             osc.frequency.value = 600;
             osc.type = 'sine';
             g.gain.setValueAtTime(0.25, t);
@@ -392,7 +393,15 @@ function scheduleMorse(code, startTime) {
     return t;
 }
 
-function playCode(code) { scheduleMorse(code, ctx().currentTime + 0.05); }
+function playCode(code) {
+    const c = getCtx();
+    /* Resume AudioContext if suspended (browser policy after inactivity) */
+    if (c.state === 'suspended') {
+        c.resume().then(() => scheduleMorse(code, c.currentTime + 0.05));
+    } else {
+        scheduleMorse(code, c.currentTime + 0.05);
+    }
+}
 
 /* ── Reference grid ── */
 function makeCard(ch) {
@@ -488,13 +497,14 @@ function nextQ() {
     } else {
         document.getElementById('q-display').textContent = '♪';
         document.getElementById('q-hint').textContent = '소리를 듣고 글자를 맞춰보세요';
-        setTimeout(()=>playCode(MORSE[cur]), 200);
+        setTimeout(() => playCode(MORSE[cur]), 200);
     }
     document.getElementById('q-input').focus();
 }
 
 function replayQ() {
-    if (cur && (mode==='ear')) playCode(MORSE[cur]);
+    /* Play Morse sound for current question in ALL modes */
+    if (cur) playCode(MORSE[cur]);
 }
 
 function handleKey(e) {
@@ -504,7 +514,7 @@ function handleKey(e) {
 function checkAnswer() {
     const raw = document.getElementById('q-input').value.trim().toUpperCase();
     if (!raw || !cur) return;
-    const correct = mode==='ltm' ? MORSE[cur] : cur;
+    const correct = mode === 'ltm' ? MORSE[cur] : cur;
     const fb = document.getElementById('q-feedback');
     if (raw === correct) {
         ok++;
